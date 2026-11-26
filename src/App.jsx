@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { ArrowUp, ChevronDown, Code2, ImagePlus, Menu, MessageSquare, PanelLeftClose, Plus, Settings2, Sparkles, Trash2, X } from 'lucide-react';
+import { ArrowUp, ChevronDown, Code2, ImagePlus, LockKeyhole, Menu, MessageSquare, PanelLeftClose, Plus, Settings2, Sparkles, Trash2, X } from 'lucide-react';
 import { api, saveThread } from './api.js';
 import { packCodebase, resizeImage } from './uploads.js';
 const Markdown = lazy(() => import('./Markdown.jsx'));
@@ -19,6 +19,10 @@ export default function App() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [locked, setLocked] = useState(false);
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [unlocking, setUnlocking] = useState(false);
   const bottom = useRef(null);
   const folderInput = useRef(null);
   const imageInput = useRef(null);
@@ -29,10 +33,45 @@ export default function App() {
 
   useEffect(() => { current.current = thread; selectedId.current = thread?.id; }, [thread]);
   useEffect(() => {
-    api('/threads').then(setThreads).catch((e) => setError(e.message)).finally(() => setLoading(false));
-    return () => clearTimeout(saveTimer.current);
+    const requirePassword = () => setLocked(true);
+    window.addEventListener('app-auth-required', requirePassword);
+    api('/threads').then(setThreads).catch((e) => { if (e.status !== 401) setError(e.message); }).finally(() => setLoading(false));
+    return () => { window.removeEventListener('app-auth-required', requirePassword); clearTimeout(saveTimer.current); };
   }, []);
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: 'smooth' }); }, [thread?.messages?.length, busy]);
+
+  async function unlock(event) {
+    event.preventDefault();
+    if (!password) return;
+    setUnlocking(true);
+    setAuthError('');
+    localStorage.setItem('app-password', password);
+    try {
+      const items = await api('/threads');
+      setThreads(items);
+      setLocked(false);
+      setPassword('');
+      setError('');
+    } catch (e) {
+      setAuthError(e.message);
+    } finally {
+      setUnlocking(false);
+    }
+  }
+
+  function signOut() {
+    clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    localStorage.removeItem('app-password');
+    current.current = null;
+    setThread(null);
+    setThreads([]);
+    setDraft('');
+    setImages([]);
+    setSidebar(false);
+    setControls(false);
+    setLocked(true);
+  }
 
   function updateList(item) {
     setThreads((prev) => [
@@ -174,7 +213,7 @@ export default function App() {
             <button className="delete-btn" aria-label={`Delete ${item.title}`} title="Delete conversation" onClick={() => deleteThread(item.id)}><Trash2 size={15} /></button>
           </div>)}
         </nav>
-        <div className="sidebar-footer"><span className="status-dot" /> PRIVATE WORKSPACE <span className="footer-line" /><a href="/.auth/logout">Sign out</a></div>
+        <div className="sidebar-footer"><span className="status-dot" /> PRIVATE WORKSPACE <span className="footer-line" /><button onClick={signOut}>Lock app</button></div>
       </aside>
 
       <main className="main-panel">
@@ -207,6 +246,7 @@ export default function App() {
         <section className="control-section"><label htmlFor="reasoning">Reasoning effort</label><p>Higher effort may take longer and use more tokens.</p><div className="select-wrap"><select id="reasoning" disabled={!thread} value={thread?.reasoningEffort || 'medium'} onChange={(e) => editSettings({ reasoningEffort: e.target.value })}><option value="none">None</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select><ChevronDown size={16} /></div></section>
         <section className="control-section codebase-section"><label>Codebase context</label><p>Attach source files as lasting context for this conversation. Files are sent to your Azure OpenAI deployment with each message; exclude secrets.</p><div className="codebase-card"><div className="codebase-icon"><Code2 size={20} /></div><div><strong>{thread?.codebaseFileCount ? `${thread.codebaseFileCount} files attached` : 'No codebase attached'}</strong><span>{thread?.codebaseFileCount ? `~${thread.codebaseTokens.toLocaleString()} tokens · saved across devices` : 'Choose a folder to get started'}</span></div></div><button className="folder-btn" disabled={uploading} onClick={() => folderInput.current?.click()}>{uploading ? 'Reading files...' : thread?.codebaseFileCount ? 'Replace codebase folder' : 'Upload codebase folder'}</button><input hidden ref={folderInput} type="file" webkitdirectory="" directory="" multiple onChange={uploadFolder} />{thread?.codebaseFileCount > 0 && <button className="clear-btn" onClick={() => { editSettings({ codebaseContext: '', codebaseFileCount: 0, codebaseTokens: 0 }); setNotice('Codebase context removed from this thread.'); }}>Clear codebase</button>}<span className="field-meta">450,000 CHARACTER LIMIT · BINARY FILES SKIPPED</span></section>
       </div><div className="drawer-foot"><span className="status-dot" /> Settings save automatically</div></aside></>}
+      {locked && <div className="lock-screen"><form className="lock-card" onSubmit={unlock}><div className="lock-icon"><LockKeyhole size={23} strokeWidth={1.5} /></div><span className="eyebrow">PRIVATE WORKSPACE</span><h2>Welcome back.</h2><p>Enter your app password to open your conversations.</p><label htmlFor="app-password">Password</label><input id="app-password" autoFocus autoComplete="current-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Your app password" />{authError && <div className="lock-error" role="alert">{authError}</div>}<button type="submit" disabled={unlocking || !password}>{unlocking ? 'Unlocking...' : 'Unlock workspace'}</button></form></div>}
     </div>
   );
 }

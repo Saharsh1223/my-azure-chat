@@ -1,11 +1,14 @@
 export async function api(path, options = {}) {
   const response = await fetch(`/api${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers: { 'Content-Type': 'application/json', 'x-app-password': localStorage.getItem('app-password') || '', ...options.headers },
   });
-  if (response.redirected && response.url.includes('/.auth/login/')) {
-    window.location.assign(response.url);
-    throw new Error('Sign in to continue.');
+  if (response.status === 401) {
+    localStorage.removeItem('app-password');
+    window.dispatchEvent(new Event('app-auth-required'));
+    const error = new Error('Incorrect password. Please try again.');
+    error.status = 401;
+    throw error;
   }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
