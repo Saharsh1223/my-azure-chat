@@ -1,0 +1,13 @@
+{
+  "name": "Stillroom - Private AI Chat",
+  "short_name": "Stillroom",
+  "description": "A private space for conversations and code.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#101317",
+  "theme_color": "#101317",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
